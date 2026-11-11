@@ -1,0 +1,113 @@
+from base_plugin import BasePlugin, MethodHook
+from hook_utils import find_class
+from java.lang import ThreadLocal
+
+
+__id__ = "quiet_group_refresh"
+__name__ = "Quiet Notification Group Refresh"
+__description__ = (
+    "Silences Telegram's group-summary alert behavior only while the app "
+    "rebuilds notifications without a new message. Experimental workaround."
+)
+__author__ = "OpenAI"
+__version__ = "0.1.0"
+__app_version__ = ">=13.1.1"
+__sdk_version__ = ">=1.4.4.3"
+__category__ = ["tools"]
+
+
+# Notification.GROUP_ALERT_CHILDREN == 2. In a grouped notification, this
+# silences the group summary while leaving the child notifications' normal
+# grouping policy in place.
+GROUP_ALERT_CHILDREN = 2
+
+
+class _NotificationRefreshHook(MethodHook):
+    def __init__(self, plugin):
+        self.plugin = plugin
+
+    def before_hooked_method(self, param):
+        try:
+            # showOrUpdateNotification(false) is Telegram's non-alerting
+            # refresh path (for example, after notifications have been read).
+            should_be_quiet = len(param.args) > 0 and not bool(param.args[0])
+            self.plugin._quiet_refresh.set(should_be_quiet)
+        except Exception:
+            self.plugin._quiet_refresh.remove()
+
+    def after_hooked_method(self, param):
+        # Keep the state scoped to this Java thread and this method invocation.
+        self.plugin._quiet_refresh.remove()
+
+
+class _GroupSummaryHook(MethodHook):
+    def __init__(self, plugin):
+        self.plugin = plugin
+
+    def after_hooked_method(self, param):
+        try:
+            if not bool(self.plugin._quiet_refresh.get()):
+                return
+
+            # Only touch the builder used for the actual group summary.
+            if not bool(param.args[0]):
+                return
+
+            builder = param.thisObject
+            builder.setOnlyAlertOnce(True)
+            builder.setGroupAlertBehavior(GROUP_ALERT_CHILDREN)
+            self.plugin.logger.info(
+                "Applied quiet group-summary behavior during a silent refresh"
+            )
+        except Exception:
+            self.plugin.logger.exception(
+                "Could not adjust the group summary during a silent refresh"
+            )
+
+
+class QuietGroupRefreshPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self._quiet_refresh = ThreadLocal()
+
+        controller_class = find_class(
+            "org.telegram.messenger.NotificationsController"
+        )
+        builder_class = find_class(
+            "androidx.core.app.NotificationCompat$Builder"
+        )
+
+        if controller_class is None:
+            self.logger.error(
+                "NotificationsController was not found; plugin did not hook"
+            )
+            return
+
+        if builder_class is None:
+            self.logger.error(
+                "NotificationCompat.Builder was not found; plugin did not hook"
+            )
+            return
+
+        self._refresh_hooks = self.hook_all_methods(
+            controller_class,
+            "showOrUpdateNotification",
+            _NotificationRefreshHook(self),
+        )
+        self._summary_hooks = self.hook_all_methods(
+            builder_class,
+            "setGroupSummary",
+            _GroupSummaryHook(self),
+        )
+
+        if not self._refresh_hooks or not self._summary_hooks:
+            self.logger.error(
+                "One or more hooks could not be installed. Check the plugin log."
+            )
+            return
+
+        self.logger.info(
+            "Loaded. Only silent notification refreshes will be modified."
+        )
+
+    def on_plugin_unload(self):
+        self.logger.info("Unloaded; notification behavior is back to normal")

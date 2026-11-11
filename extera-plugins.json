@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "name": "Quiet Group Refresh (Experimental)",
+  "description": "A single experimental notification behavior plugin.",
+  "author": "OpenAI",
+  "homepage": "https://plugins.exteragram.app/docs/plugin-repositories",
+  "plugins": [
+    {
+      "id": "quiet_group_refresh",
+      "name": "Quiet Notification Group Refresh",
+      "description": "Experimental workaround intended to silence group-summary refreshes without muting normal incoming-message alerts. Not yet verified on all exteraGram builds.",
+      "author": "OpenAI",
+      "version": "0.1.0",
+      "icon": "exteraPlugins/1",
+      "app_version": ">=13.1.1",
+      "sdk_version": ">=1.4.4.3",
+      "category": [
+        "tools"
+      ],
+      "file": "plugins/quiet_group_refresh/quiet_group_refresh.plugin",
+      "sha256": "555ee6d6f5509a58f447302d1417fea56470bac77539be52ba9a2b854c682531",
+      "size": 3666,
+      "updated_at": "2026-11-11T00:00:00Z"
+    }
+  ]
+}
